@@ -1,24 +1,136 @@
 package main
 
-import "fmt"
+import (
+	"bufio"
+	"cg"
+	"fmt"
+	"ipc"
+	"os"
+	"strconv"
+	"strings"
+)
+
+var centerClient *cg.CenterClient
+
+func startCenterService() error {
+	server := ipc.NewIpcServer(&cg.CenterServer{})
+	client := ipc.NewIpcClient(server)
+	centerClient = &cg.CenterClient{client}
+	return nil
+}
+
+func Help(args []string) int {
+	fmt.Printf("Commands:\n " +
+		"login <username><level><exp>\n" +
+		"logout<username>\n" +
+		"send<message>\n" +
+		"listplayer\n" +
+		"quit(q)\n" +
+		"help(h)\n")
+	return 0
+}
+
+func Quit(args []string) int {
+	return 1
+}
+
+func Logout(args []string) int {
+	if len(args) != 2 {
+		fmt.Printf("USAGE: logout <username>")
+		return 0
+	}
+
+	centerClient.RemovePlayer(args[1])
+	return 0
+}
+
+func Login(args []string) int {
+	if len(args) != 4 {
+		fmt.Printf("USAGE: login <username><level><exp>")
+		return 0
+	}
+
+	level, err := strconv.Atoi(args[2])
+	if err != nil {
+		fmt.Printf("Invalid Parameter: <level> should be an integer.")
+		return 0
+	}
+
+	exp, err := strconv.Atoi(args[3])
+	if err != nil {
+		fmt.Printf("Invalid Parameter: <exp> should be an integer.")
+	}
+
+	player := cg.NewPlayer()
+	player.Name = args[1]
+	player.Level = level
+	player.Exp = exp
+
+	err = centerClient.AddPlayer(player)
+	if err != nil {
+		fmt.Printf("Failed adding player %s", err)
+	}
+
+	return 0
+}
+
+func ListPlayer(args []string) int {
+	ps, err := centerClient.ListPlayer("")
+	if err != nil {
+		fmt.Printf("Failed: %s", err)
+	} else {
+		for i, v := range ps {
+			fmt.Printf("%d:%v\n", i, v)
+		}
+	}
+	return 0
+}
+
+func Send(args []string) int {
+	message := strings.Join(args[1:], " ")
+
+	err := centerClient.Broadcast(message)
+	if err != nil {
+		fmt.Printf("Failed:%s", err)
+	}
+	return 0
+}
+
+func GetCommandHandlers() map[string]func(args []string) int {
+	return map[string]func([]string) int{
+		"help":       Help,
+		"h":          Help,
+		"quit":       Quit,
+		"q":          Quit,
+		"login":      Login,
+		"logout":     Logout,
+		"listplayer": ListPlayer,
+		"send":       Send,
+	}
+}
 
 func main() {
-	rankInfos := []int{1, 2, 3, 4, 5}
-	//在排行榜中排除自己
-	for i, v := range rankInfos {
-		if v == 5 {
-			//排行榜中只有自己一个人
-			if i == 0 {
-				//自己刚好是排行榜第一个人，这边三个条件主要考虑的是slice index 越界的问题
-				rankInfos = rankInfos[1:]
-			} else if i == len(rankInfos)-1 {
-				//自己刚好是排行榜最后一个人
-				rankInfos = rankInfos[:i]
+	fmt.Printf("Casual Game Server Solution")
+	startCenterService()
+	Help(nil)
+	r := bufio.NewReader(os.Stdin)
+
+	handlers := GetCommandHandlers()
+
+	for {
+		fmt.Printf("<command>")
+		b, _, _ := r.ReadLine()
+		line := string(b)
+
+		tokens := strings.Split(line, " ")
+
+		if handler, ok := handlers[tokens[0]]; ok {
+			ret := handler(tokens)
+			if ret != 0 {
+				break
 			} else {
-				//自己在排行榜中间
-				rankInfos = append(rankInfos[:i], rankInfos[i+1:]...)
+				fmt.Printf("Unknown command:", tokens[0])
 			}
 		}
 	}
-	fmt.Printf("%v", rankInfos)
 }
